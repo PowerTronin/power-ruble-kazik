@@ -20,9 +20,19 @@ public final class KazikState extends PersistentState {
     private static final String PLAYERS_KEY = "players";
     private static final String RECENT_KEY = "recent";
     private static final String PLAYER_RECENT_KEY = "playerRecent";
+    private static final String CASINOS_KEY = "casinos";
+    private static final String CASINO_RECENT_KEY = "casinoRecent";
+    private static final String ORG_CASINOS_KEY = "orgCasinos";
     private static final String ENTRIES_KEY = "entries";
     private static final String PLAYER_ID_KEY = "playerId";
     private static final String PLAYER_NAME_KEY = "playerName";
+    private static final String CASINO_ID_KEY = "casinoId";
+    private static final String CASINO_NAME_KEY = "casinoName";
+    private static final String ORGANIZATION_ID_KEY = "organizationId";
+    private static final String ORGANIZATION_NAME_KEY = "organizationName";
+    private static final String CREATED_AT_KEY = "createdAt";
+    private static final String ENABLED_KEY = "enabled";
+    private static final String STATS_KEY = "stats";
     private static final String GAMES_PLAYED_KEY = "gamesPlayed";
     private static final String WINS_KEY = "wins";
     private static final String LOSSES_KEY = "losses";
@@ -43,6 +53,9 @@ public final class KazikState extends PersistentState {
     private final Map<UUID, PlayerStats> playerStats = new HashMap<>();
     private final List<GameEntry> recentEntries = new ArrayList<>();
     private final Map<UUID, List<GameEntry>> playerRecentEntries = new HashMap<>();
+    private final Map<UUID, CasinoStats> casinoStats = new HashMap<>();
+    private final Map<UUID, List<GameEntry>> casinoRecentEntries = new HashMap<>();
+    private final Map<UUID, OrgCasino> orgCasinos = new HashMap<>();
 
     public static KazikState get(MinecraftServer server) {
         PersistentStateManager manager = server.getOverworld().getPersistentStateManager();
@@ -96,6 +109,47 @@ public final class KazikState extends PersistentState {
             }
         }
 
+        if (nbt.contains(CASINOS_KEY, NbtElement.LIST_TYPE)) {
+            NbtList casinos = nbt.getList(CASINOS_KEY, NbtElement.COMPOUND_TYPE);
+            for (int index = 0; index < casinos.size(); index++) {
+                CasinoStats stats = CasinoStats.fromNbt(casinos.getCompound(index));
+                if (stats != null) {
+                    state.casinoStats.put(stats.casinoId(), stats);
+                }
+            }
+        }
+
+        if (nbt.contains(CASINO_RECENT_KEY, NbtElement.LIST_TYPE)) {
+            NbtList casinoRecent = nbt.getList(CASINO_RECENT_KEY, NbtElement.COMPOUND_TYPE);
+            for (int index = 0; index < casinoRecent.size(); index++) {
+                NbtCompound casinoHistory = casinoRecent.getCompound(index);
+                try {
+                    UUID casinoId = UUID.fromString(casinoHistory.getString(CASINO_ID_KEY));
+                    NbtList entries = casinoHistory.getList(ENTRIES_KEY, NbtElement.COMPOUND_TYPE);
+                    List<GameEntry> loadedEntries = new ArrayList<>();
+                    for (int entryIndex = 0; entryIndex < entries.size(); entryIndex++) {
+                        GameEntry entry = GameEntry.fromNbt(entries.getCompound(entryIndex));
+                        if (entry != null) {
+                            loadedEntries.add(entry);
+                        }
+                    }
+                    state.casinoRecentEntries.put(casinoId, loadedEntries);
+                } catch (RuntimeException exception) {
+                    PowerRubleKazikMod.logger().warn("Skipping invalid Kazik casino history entry", exception);
+                }
+            }
+        }
+
+        if (nbt.contains(ORG_CASINOS_KEY, NbtElement.LIST_TYPE)) {
+            NbtList orgCasinoData = nbt.getList(ORG_CASINOS_KEY, NbtElement.COMPOUND_TYPE);
+            for (int index = 0; index < orgCasinoData.size(); index++) {
+                OrgCasino casino = OrgCasino.fromNbt(orgCasinoData.getCompound(index));
+                if (casino != null) {
+                    state.orgCasinos.put(casino.organizationId(), casino);
+                }
+            }
+        }
+
         return state;
     }
 
@@ -125,6 +179,31 @@ public final class KazikState extends PersistentState {
                 playerRecent.add(playerHistory);
             });
         nbt.put(PLAYER_RECENT_KEY, playerRecent);
+
+        NbtList casinos = new NbtList();
+        casinoStats.values().stream()
+            .sorted(Comparator.comparing(CasinoStats::casinoName, String.CASE_INSENSITIVE_ORDER))
+            .forEach(stats -> casinos.add(stats.toNbt()));
+        nbt.put(CASINOS_KEY, casinos);
+
+        NbtList casinoRecent = new NbtList();
+        casinoRecentEntries.entrySet().stream()
+            .sorted(Comparator.comparing(entry -> casinoStats(entry.getKey()).casinoName(), String.CASE_INSENSITIVE_ORDER))
+            .forEach(entry -> {
+                NbtCompound casinoHistory = new NbtCompound();
+                casinoHistory.putString(CASINO_ID_KEY, entry.getKey().toString());
+                NbtList entries = new NbtList();
+                entry.getValue().forEach(gameEntry -> entries.add(gameEntry.toNbt()));
+                casinoHistory.put(ENTRIES_KEY, entries);
+                casinoRecent.add(casinoHistory);
+            });
+        nbt.put(CASINO_RECENT_KEY, casinoRecent);
+
+        NbtList orgCasinoData = new NbtList();
+        orgCasinos.values().stream()
+            .sorted(Comparator.comparing(OrgCasino::organizationName, String.CASE_INSENSITIVE_ORDER))
+            .forEach(casino -> orgCasinoData.add(casino.toNbt()));
+        nbt.put(ORG_CASINOS_KEY, orgCasinoData);
         return nbt;
     }
 
@@ -136,6 +215,52 @@ public final class KazikState extends PersistentState {
         return playerStats.getOrDefault(playerId, PlayerStats.empty(playerId, playerId.toString()));
     }
 
+    public CasinoStats casinoStats(UUID casinoId) {
+        return casinoStats.getOrDefault(casinoId, CasinoStats.empty(casinoId, casinoId.toString()));
+    }
+
+    public List<GameEntry> casinoRecentEntries(UUID casinoId, int limit) {
+        return casinoRecentEntries.getOrDefault(casinoId, List.of()).stream()
+            .limit(limit)
+            .toList();
+    }
+
+    public List<OrgCasino> orgCasinos() {
+        return orgCasinos.values().stream()
+            .filter(OrgCasino::enabled)
+            .sorted(Comparator.comparing(OrgCasino::organizationName, String.CASE_INSENSITIVE_ORDER))
+            .toList();
+    }
+
+    public boolean isOrgCasinoEnabled(UUID organizationId) {
+        OrgCasino casino = orgCasinos.get(organizationId);
+        return casino != null && casino.enabled();
+    }
+
+    public boolean enableOrgCasino(UUID organizationId, String organizationName) {
+        OrgCasino current = orgCasinos.get(organizationId);
+        if (current != null && current.enabled()) {
+            return false;
+        }
+
+        Instant createdAt = current == null ? Instant.now() : current.createdAt();
+        orgCasinos.put(organizationId, new OrgCasino(organizationId, organizationName, createdAt, true));
+        rememberCasinoName(organizationId, organizationName);
+        markDirty();
+        return true;
+    }
+
+    public boolean disableOrgCasino(UUID organizationId) {
+        OrgCasino current = orgCasinos.get(organizationId);
+        if (current == null || !current.enabled()) {
+            return false;
+        }
+
+        orgCasinos.put(organizationId, current.withEnabled(false));
+        markDirty();
+        return true;
+    }
+
     public void rememberPlayerName(UUID playerId, String playerName) {
         PlayerStats current = playerStats.get(playerId);
         if (current != null && playerName != null && !playerName.isBlank() && !current.playerName().equals(playerName)) {
@@ -144,7 +269,33 @@ public final class KazikState extends PersistentState {
         }
     }
 
+    public void rememberCasinoName(UUID casinoId, String casinoName) {
+        CasinoStats currentStats = casinoStats.get(casinoId);
+        if (currentStats != null && casinoName != null && !casinoName.isBlank() && !currentStats.casinoName().equals(casinoName)) {
+            casinoStats.put(casinoId, currentStats.withCasinoName(casinoName));
+            markDirty();
+        }
+
+        OrgCasino currentCasino = orgCasinos.get(casinoId);
+        if (currentCasino != null && casinoName != null && !casinoName.isBlank() && !currentCasino.organizationName().equals(casinoName)) {
+            orgCasinos.put(casinoId, currentCasino.withOrganizationName(casinoName));
+            markDirty();
+        }
+    }
+
     public void recordGame(UUID playerId, String playerName, KazikGameEngine.GameResult result, int recentLimit, int perPlayerRecentLimit) {
+        recordGame(playerId, playerName, null, null, result, recentLimit, perPlayerRecentLimit);
+    }
+
+    public void recordGame(
+        UUID playerId,
+        String playerName,
+        UUID casinoId,
+        String casinoName,
+        KazikGameEngine.GameResult result,
+        int recentLimit,
+        int perPlayerRecentLimit
+    ) {
         PlayerStats current = playerStats.getOrDefault(playerId, PlayerStats.empty(playerId, playerName));
         PlayerStats nextPlayerStats = current.record(playerName, result);
         playerStats.put(playerId, nextPlayerStats);
@@ -157,6 +308,15 @@ public final class KazikState extends PersistentState {
         List<GameEntry> playerEntries = playerRecentEntries.computeIfAbsent(playerId, ignored -> new ArrayList<>());
         playerEntries.add(0, entry);
         trimEntries(playerEntries, perPlayerRecentLimit);
+
+        if (casinoId != null && casinoName != null && !casinoName.isBlank()) {
+            CasinoStats currentCasino = casinoStats.getOrDefault(casinoId, CasinoStats.empty(casinoId, casinoName));
+            casinoStats.put(casinoId, currentCasino.record(casinoName, result));
+
+            List<GameEntry> casinoEntries = casinoRecentEntries.computeIfAbsent(casinoId, ignored -> new ArrayList<>());
+            casinoEntries.add(0, entry);
+            trimEntries(casinoEntries, recentLimit);
+        }
         markDirty();
     }
 
@@ -267,6 +427,81 @@ public final class KazikState extends PersistentState {
                 nbt.getLong(BIGGEST_WIN_KEY),
                 nbt.getLong(BIGGEST_LOSS_KEY)
             );
+        }
+    }
+
+    public record CasinoStats(
+        UUID casinoId,
+        String casinoName,
+        GlobalStats stats
+    ) {
+        static CasinoStats empty(UUID casinoId, String casinoName) {
+            return new CasinoStats(casinoId, casinoName, GlobalStats.empty());
+        }
+
+        CasinoStats withCasinoName(String nextCasinoName) {
+            return new CasinoStats(casinoId, nextCasinoName, stats);
+        }
+
+        CasinoStats record(String nextCasinoName, KazikGameEngine.GameResult result) {
+            return new CasinoStats(casinoId, nextCasinoName, stats.record(result));
+        }
+
+        private NbtCompound toNbt() {
+            NbtCompound nbt = new NbtCompound();
+            nbt.putString(CASINO_ID_KEY, casinoId.toString());
+            nbt.putString(CASINO_NAME_KEY, casinoName);
+            nbt.put(STATS_KEY, stats.toNbt());
+            return nbt;
+        }
+
+        private static CasinoStats fromNbt(NbtCompound nbt) {
+            try {
+                return new CasinoStats(
+                    UUID.fromString(nbt.getString(CASINO_ID_KEY)),
+                    nbt.getString(CASINO_NAME_KEY),
+                    GlobalStats.fromNbt(nbt.getCompound(STATS_KEY))
+                );
+            } catch (RuntimeException exception) {
+                return null;
+            }
+        }
+    }
+
+    public record OrgCasino(
+        UUID organizationId,
+        String organizationName,
+        Instant createdAt,
+        boolean enabled
+    ) {
+        OrgCasino withOrganizationName(String nextOrganizationName) {
+            return new OrgCasino(organizationId, nextOrganizationName, createdAt, enabled);
+        }
+
+        OrgCasino withEnabled(boolean nextEnabled) {
+            return new OrgCasino(organizationId, organizationName, createdAt, nextEnabled);
+        }
+
+        private NbtCompound toNbt() {
+            NbtCompound nbt = new NbtCompound();
+            nbt.putString(ORGANIZATION_ID_KEY, organizationId.toString());
+            nbt.putString(ORGANIZATION_NAME_KEY, organizationName);
+            nbt.putString(CREATED_AT_KEY, createdAt.toString());
+            nbt.putBoolean(ENABLED_KEY, enabled);
+            return nbt;
+        }
+
+        private static OrgCasino fromNbt(NbtCompound nbt) {
+            try {
+                return new OrgCasino(
+                    UUID.fromString(nbt.getString(ORGANIZATION_ID_KEY)),
+                    nbt.getString(ORGANIZATION_NAME_KEY),
+                    Instant.parse(nbt.getString(CREATED_AT_KEY)),
+                    !nbt.contains(ENABLED_KEY) || nbt.getBoolean(ENABLED_KEY)
+                );
+            } catch (RuntimeException exception) {
+                return null;
+            }
         }
     }
 

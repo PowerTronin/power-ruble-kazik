@@ -3,6 +3,7 @@ package ru.powerruble.kazik;
 import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import java.nio.charset.StandardCharsets;
@@ -28,6 +29,8 @@ import org.slf4j.LoggerFactory;
 import ru.powerruble.RubleState;
 import ru.powerruble.RubleTransaction;
 import ru.powerruble.api.PowerRuble;
+import ru.powerruble.orgcontracts.OrgRole;
+import ru.powerruble.orgcontracts.OrganizationState;
 
 public final class PowerRubleKazikMod implements ModInitializer {
     public static final String MOD_ID = "power-ruble-kazik";
@@ -44,6 +47,9 @@ public final class PowerRubleKazikMod implements ModInitializer {
     private static final SimpleCommandExceptionType NOT_ENOUGH_MONEY = new SimpleCommandExceptionType(Text.literal("You do not have enough rubles for this bet."));
     private static final SimpleCommandExceptionType HOUSE_NOT_ENOUGH_MONEY = new SimpleCommandExceptionType(Text.literal("Casino bankroll cannot cover this possible payout."));
     private static final SimpleCommandExceptionType INVALID_DICE_TARGET = new SimpleCommandExceptionType(Text.literal("Dice target is outside configured limits."));
+    private static final SimpleCommandExceptionType ORGANIZATION_REQUIRED = new SimpleCommandExceptionType(Text.literal("You are not in an organization."));
+    private static final SimpleCommandExceptionType ORG_CASINO_EXISTS = new SimpleCommandExceptionType(Text.literal("Your organization already has an open casino."));
+    private static final SimpleCommandExceptionType ORG_CASINO_NOT_FOUND = new SimpleCommandExceptionType(Text.literal("Organization casino not found."));
 
     private static KazikConfig config;
 
@@ -96,6 +102,108 @@ public final class PowerRubleKazikMod implements ModInitializer {
                     .then(CommandManager.literal("slots")
                         .then(CommandManager.argument("bet", LongArgumentType.longArg(1))
                             .executes(context -> playSlots(context.getSource(), LongArgumentType.getLong(context, "bet")))
+                        )
+                    )
+                    .then(CommandManager.literal("org")
+                        .then(CommandManager.literal("create")
+                            .executes(context -> createOrgCasino(context.getSource()))
+                        )
+                        .then(CommandManager.literal("close")
+                            .executes(context -> closeOrgCasino(context.getSource()))
+                        )
+                        .then(CommandManager.literal("info")
+                            .executes(context -> showOwnOrgCasinoInfo(context.getSource()))
+                        )
+                        .then(CommandManager.literal("list")
+                            .executes(context -> listOrgCasinos(context.getSource()))
+                        )
+                        .then(CommandManager.literal("balance")
+                            .executes(context -> showOwnOrgCasinoBalance(context.getSource()))
+                            .then(CommandManager.argument("organization", StringArgumentType.word())
+                                .executes(context -> showOrgCasinoBalance(
+                                    context.getSource(),
+                                    StringArgumentType.getString(context, "organization")
+                                ))
+                            )
+                        )
+                        .then(CommandManager.literal("stats")
+                            .executes(context -> showOwnOrgCasinoStats(context.getSource()))
+                            .then(CommandManager.argument("organization", StringArgumentType.word())
+                                .executes(context -> showOrgCasinoStats(
+                                    context.getSource(),
+                                    StringArgumentType.getString(context, "organization")
+                                ))
+                            )
+                        )
+                        .then(CommandManager.literal("recent")
+                            .executes(context -> showOwnOrgCasinoRecent(context.getSource()))
+                            .then(CommandManager.argument("organization", StringArgumentType.word())
+                                .executes(context -> showOrgCasinoRecent(
+                                    context.getSource(),
+                                    StringArgumentType.getString(context, "organization")
+                                ))
+                            )
+                        )
+                        .then(CommandManager.literal("coin")
+                            .then(CommandManager.argument("organization", StringArgumentType.word())
+                                .then(CommandManager.argument("bet", LongArgumentType.longArg(1))
+                                    .then(CommandManager.literal("heads")
+                                        .executes(context -> playOrgCoin(
+                                            context.getSource(),
+                                            StringArgumentType.getString(context, "organization"),
+                                            LongArgumentType.getLong(context, "bet"),
+                                            "heads"
+                                        ))
+                                    )
+                                    .then(CommandManager.literal("tails")
+                                        .executes(context -> playOrgCoin(
+                                            context.getSource(),
+                                            StringArgumentType.getString(context, "organization"),
+                                            LongArgumentType.getLong(context, "bet"),
+                                            "tails"
+                                        ))
+                                    )
+                                )
+                            )
+                        )
+                        .then(CommandManager.literal("dice")
+                            .then(CommandManager.argument("organization", StringArgumentType.word())
+                                .then(CommandManager.argument("bet", LongArgumentType.longArg(1))
+                                    .then(CommandManager.literal("under")
+                                        .then(CommandManager.argument("target", IntegerArgumentType.integer(2, 98))
+                                            .executes(context -> playOrgDice(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "organization"),
+                                                LongArgumentType.getLong(context, "bet"),
+                                                KazikGameEngine.DiceDirection.UNDER,
+                                                IntegerArgumentType.getInteger(context, "target")
+                                            ))
+                                        )
+                                    )
+                                    .then(CommandManager.literal("over")
+                                        .then(CommandManager.argument("target", IntegerArgumentType.integer(2, 98))
+                                            .executes(context -> playOrgDice(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "organization"),
+                                                LongArgumentType.getLong(context, "bet"),
+                                                KazikGameEngine.DiceDirection.OVER,
+                                                IntegerArgumentType.getInteger(context, "target")
+                                            ))
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                        .then(CommandManager.literal("slots")
+                            .then(CommandManager.argument("organization", StringArgumentType.word())
+                                .then(CommandManager.argument("bet", LongArgumentType.longArg(1))
+                                    .executes(context -> playOrgSlots(
+                                        context.getSource(),
+                                        StringArgumentType.getString(context, "organization"),
+                                        LongArgumentType.getLong(context, "bet")
+                                    ))
+                                )
+                            )
                         )
                     )
                     .then(CommandManager.literal("stats")
@@ -180,6 +288,9 @@ public final class PowerRubleKazikMod implements ModInitializer {
         send(source, "/kazik coin <bet> heads|tails");
         send(source, "/kazik dice <bet> under|over <target>");
         send(source, "/kazik slots <bet>");
+        send(source, "/kazik org create|close|info|list");
+        send(source, "/kazik org coin|dice|slots <organization> <bet> ...");
+        send(source, "/kazik org balance|stats|recent [organization]");
         send(source, "/kazik stats, /kazik stats server, /kazik stats player <player>");
         send(source, "/kazik top wins|losses|profit, /kazik recent, /kazik recent me");
         send(source, "/kazik house balance");
@@ -195,7 +306,7 @@ public final class PowerRubleKazikMod implements ModInitializer {
         }
 
         long maxPayout = KazikGameEngine.payout(bet, config.coinPayoutMultiplier());
-        return play(source, bet, maxPayout, () -> KazikGameEngine.coin(RANDOM, bet, guess, config.coinPayoutMultiplier()));
+        return play(source, houseAccount(), bet, maxPayout, () -> KazikGameEngine.coin(RANDOM, bet, guess, config.coinPayoutMultiplier()));
     }
 
     private static int playDice(ServerCommandSource source, long bet, KazikGameEngine.DiceDirection direction, int target) throws CommandSyntaxException {
@@ -208,7 +319,7 @@ public final class PowerRubleKazikMod implements ModInitializer {
 
         double multiplier = KazikGameEngine.dicePayoutMultiplier(direction, target, config.diceHouseEdgePercent());
         long maxPayout = KazikGameEngine.payout(bet, multiplier);
-        return play(source, bet, maxPayout, () -> KazikGameEngine.dice(RANDOM, bet, direction, target, config.diceHouseEdgePercent()));
+        return play(source, houseAccount(), bet, maxPayout, () -> KazikGameEngine.dice(RANDOM, bet, direction, target, config.diceHouseEdgePercent()));
     }
 
     private static int playSlots(ServerCommandSource source, long bet) throws CommandSyntaxException {
@@ -217,27 +328,69 @@ public final class PowerRubleKazikMod implements ModInitializer {
         }
 
         long maxPayout = KazikGameEngine.payout(bet, config.slotsMaxPayoutMultiplier());
-        return play(source, bet, maxPayout, () -> KazikGameEngine.slots(RANDOM, bet, config.slotsMaxPayoutMultiplier()));
+        return play(source, houseAccount(), bet, maxPayout, () -> KazikGameEngine.slots(RANDOM, bet, config.slotsMaxPayoutMultiplier()));
     }
 
-    private static int play(ServerCommandSource source, long bet, long maxPayout, GameSupplier gameSupplier) throws CommandSyntaxException {
+    private static int playOrgCoin(ServerCommandSource source, String organizationName, long bet, String guess) throws CommandSyntaxException {
+        if (!config.coinEnabled()) {
+            throw GAME_DISABLED.create();
+        }
+
+        OrganizationState.Organization organization = resolveOpenOrgCasino(source, organizationName);
+        long maxPayout = KazikGameEngine.payout(bet, config.coinPayoutMultiplier());
+        return play(source, orgAccount(organization), bet, maxPayout, () -> KazikGameEngine.coin(RANDOM, bet, guess, config.coinPayoutMultiplier()));
+    }
+
+    private static int playOrgDice(
+        ServerCommandSource source,
+        String organizationName,
+        long bet,
+        KazikGameEngine.DiceDirection direction,
+        int target
+    ) throws CommandSyntaxException {
+        if (!config.diceEnabled()) {
+            throw GAME_DISABLED.create();
+        }
+        if (target < config.diceMinTarget() || target > config.diceMaxTarget()) {
+            throw INVALID_DICE_TARGET.create();
+        }
+
+        OrganizationState.Organization organization = resolveOpenOrgCasino(source, organizationName);
+        double multiplier = KazikGameEngine.dicePayoutMultiplier(direction, target, config.diceHouseEdgePercent());
+        long maxPayout = KazikGameEngine.payout(bet, multiplier);
+        return play(source, orgAccount(organization), bet, maxPayout, () -> KazikGameEngine.dice(RANDOM, bet, direction, target, config.diceHouseEdgePercent()));
+    }
+
+    private static int playOrgSlots(ServerCommandSource source, String organizationName, long bet) throws CommandSyntaxException {
+        if (!config.slotsEnabled()) {
+            throw GAME_DISABLED.create();
+        }
+
+        OrganizationState.Organization organization = resolveOpenOrgCasino(source, organizationName);
+        long maxPayout = KazikGameEngine.payout(bet, config.slotsMaxPayoutMultiplier());
+        return play(source, orgAccount(organization), bet, maxPayout, () -> KazikGameEngine.slots(RANDOM, bet, config.slotsMaxPayoutMultiplier()));
+    }
+
+    private static int play(ServerCommandSource source, CasinoAccount casino, long bet, long maxPayout, GameSupplier gameSupplier) throws CommandSyntaxException {
         ServerPlayerEntity player = source.getPlayerOrThrow();
         validateBet(bet);
         checkCooldown(player.getUuid());
         checkPlayerCanRisk(source.getServer(), player.getUuid(), bet);
-        rememberHouse(source.getServer());
+        rememberCasino(source.getServer(), casino);
         PowerRuble.api().rememberAccountName(source.getServer(), player.getUuid(), playerName(player));
 
-        if (config.finiteBankroll() && PowerRuble.api().getBalance(source.getServer(), HOUSE_ID) < maxPayout) {
+        if (casino.finiteBankroll() && PowerRuble.api().getBalance(source.getServer(), casino.id()) < maxPayout) {
             throw HOUSE_NOT_ENOUGH_MONEY.create();
         }
 
         KazikGameEngine.GameResult result = gameSupplier.get();
-        applyResult(source.getServer(), player, result);
+        applyResult(source.getServer(), player, casino, result);
         if (config.statsEnabled()) {
             KazikState.get(source.getServer()).recordGame(
                 player.getUuid(),
                 playerName(player),
+                casino.id(),
+                casino.name(),
                 result,
                 config.recentEntries(),
                 config.perPlayerHistoryEntries()
@@ -245,14 +398,197 @@ public final class PowerRubleKazikMod implements ModInitializer {
         }
         lastGames.put(player.getUuid(), Instant.now());
 
+        String casinoSuffix = casino.house() ? "" : " at " + casino.name();
         if (result.outcome() == KazikGameEngine.Outcome.WIN) {
-            send(source, "You won " + format(result.payout()) + " in " + result.game() + " (" + result.detail() + ").");
+            send(source, "You won " + format(result.payout()) + " in " + result.game() + casinoSuffix + " (" + result.detail() + ").");
         } else if (result.outcome() == KazikGameEngine.Outcome.LOSS) {
-            send(source, "You lost " + format(result.lost()) + " in " + result.game() + " (" + result.detail() + ").");
+            send(source, "You lost " + format(result.lost()) + " in " + result.game() + casinoSuffix + " (" + result.detail() + ").");
         } else {
-            send(source, "Draw in " + result.game() + " (" + result.detail() + ").");
+            send(source, "Draw in " + result.game() + casinoSuffix + " (" + result.detail() + ").");
         }
         return 1;
+    }
+
+    private static int createOrgCasino(ServerCommandSource source) throws CommandSyntaxException {
+        OrganizationState.Organization organization = requireManagedOrganization(source);
+        KazikState state = KazikState.get(source.getServer());
+        if (!state.enableOrgCasino(organization.id(), organization.name())) {
+            throw ORG_CASINO_EXISTS.create();
+        }
+
+        PowerRuble.api().rememberAccountName(source.getServer(), organization.id(), organization.name());
+        send(source, "Organization casino opened for " + organization.name() + ". Bankroll: " + format(PowerRuble.api().getBalance(source.getServer(), organization.id())));
+        return 1;
+    }
+
+    private static int closeOrgCasino(ServerCommandSource source) throws CommandSyntaxException {
+        OrganizationState.Organization organization = requireManagedOrganization(source);
+        if (!KazikState.get(source.getServer()).disableOrgCasino(organization.id())) {
+            throw ORG_CASINO_NOT_FOUND.create();
+        }
+
+        send(source, "Organization casino closed for " + organization.name() + ". Organization balance is unchanged.");
+        return 1;
+    }
+
+    private static int showOwnOrgCasinoInfo(ServerCommandSource source) throws CommandSyntaxException {
+        OrganizationState.Organization organization = requireOwnOrganization(source);
+        sendOrgCasinoInfo(source, organization);
+        return 1;
+    }
+
+    private static int listOrgCasinos(ServerCommandSource source) {
+        KazikState state = KazikState.get(source.getServer());
+        var casinos = state.orgCasinos();
+        if (casinos.isEmpty()) {
+            send(source, "No organization casinos are open.");
+            return 1;
+        }
+
+        send(source, "Open organization casinos:");
+        for (KazikState.OrgCasino casino : casinos) {
+            String line = "- " + casino.organizationName();
+            if (config.statsEnabled()) {
+                line += ", games " + state.casinoStats(casino.organizationId()).stats().gamesPlayed();
+            }
+            if (config.publicBalance() || source.hasPermissionLevel(2)) {
+                line += ", bankroll " + format(PowerRuble.api().getBalance(source.getServer(), casino.organizationId()));
+            }
+            send(source, line);
+        }
+        return 1;
+    }
+
+    private static int showOwnOrgCasinoBalance(ServerCommandSource source) throws CommandSyntaxException {
+        OrganizationState.Organization organization = requireOwnOrganization(source);
+        requireOpenOrgCasino(source, organization);
+        send(source, organization.name() + " casino bankroll: " + format(PowerRuble.api().getBalance(source.getServer(), organization.id())));
+        return 1;
+    }
+
+    private static int showOrgCasinoBalance(ServerCommandSource source, String organizationName) throws CommandSyntaxException {
+        OrganizationState.Organization organization = resolveOpenOrgCasino(source, organizationName);
+        requireCanViewOrgCasinoBalance(source, organization);
+        send(source, organization.name() + " casino bankroll: " + format(PowerRuble.api().getBalance(source.getServer(), organization.id())));
+        return 1;
+    }
+
+    private static int showOwnOrgCasinoStats(ServerCommandSource source) throws CommandSyntaxException {
+        requireStatsEnabled();
+        OrganizationState.Organization organization = requireOwnOrganization(source);
+        requireOpenOrgCasino(source, organization);
+        sendCasinoStats(source, organization.name(), KazikState.get(source.getServer()).casinoStats(organization.id()).stats());
+        return 1;
+    }
+
+    private static int showOrgCasinoStats(ServerCommandSource source, String organizationName) throws CommandSyntaxException {
+        requireStatsEnabled();
+        OrganizationState.Organization organization = resolveOpenOrgCasino(source, organizationName);
+        requireCanViewOrgCasinoStats(source, organization);
+        sendCasinoStats(source, organization.name(), KazikState.get(source.getServer()).casinoStats(organization.id()).stats());
+        return 1;
+    }
+
+    private static int showOwnOrgCasinoRecent(ServerCommandSource source) throws CommandSyntaxException {
+        requireStatsEnabled();
+        OrganizationState.Organization organization = requireOwnOrganization(source);
+        requireOpenOrgCasino(source, organization);
+        sendRecentEntries(
+            source,
+            "Recent casino games for " + organization.name() + ":",
+            KazikState.get(source.getServer()).casinoRecentEntries(organization.id(), config.recentEntries())
+        );
+        return 1;
+    }
+
+    private static int showOrgCasinoRecent(ServerCommandSource source, String organizationName) throws CommandSyntaxException {
+        requireStatsEnabled();
+        OrganizationState.Organization organization = resolveOpenOrgCasino(source, organizationName);
+        requireCanViewOrgCasinoStats(source, organization);
+        sendRecentEntries(
+            source,
+            "Recent casino games for " + organization.name() + ":",
+            KazikState.get(source.getServer()).casinoRecentEntries(organization.id(), config.recentEntries())
+        );
+        return 1;
+    }
+
+    private static OrganizationState.Organization requireOwnOrganization(ServerCommandSource source) throws CommandSyntaxException {
+        ServerPlayerEntity player = source.getPlayerOrThrow();
+        return OrganizationState.get(source.getServer()).organizationFor(player.getUuid()).orElseThrow(ORGANIZATION_REQUIRED::create);
+    }
+
+    private static OrganizationState.Organization requireManagedOrganization(ServerCommandSource source) throws CommandSyntaxException {
+        ServerPlayerEntity player = source.getPlayerOrThrow();
+        OrganizationState.Organization organization = requireOwnOrganization(source);
+        OrganizationState.Member member = organization.members().get(player.getUuid());
+        if (member == null || member.role() == OrgRole.MEMBER) {
+            throw NO_PERMISSION.create();
+        }
+
+        return organization;
+    }
+
+    private static OrganizationState.Organization resolveOpenOrgCasino(ServerCommandSource source, String organizationName) throws CommandSyntaxException {
+        OrganizationState.Organization organization = OrganizationState.get(source.getServer())
+            .organizationByName(organizationName)
+            .orElseThrow(ORG_CASINO_NOT_FOUND::create);
+        requireOpenOrgCasino(source, organization);
+        return organization;
+    }
+
+    private static void requireOpenOrgCasino(ServerCommandSource source, OrganizationState.Organization organization) throws CommandSyntaxException {
+        KazikState state = KazikState.get(source.getServer());
+        state.rememberCasinoName(organization.id(), organization.name());
+        if (!state.isOrgCasinoEnabled(organization.id())) {
+            throw ORG_CASINO_NOT_FOUND.create();
+        }
+    }
+
+    private static void requireCanViewOrgCasinoBalance(ServerCommandSource source, OrganizationState.Organization organization) throws CommandSyntaxException {
+        if (config.publicBalance() || source.hasPermissionLevel(2) || isOrgMember(source, organization)) {
+            return;
+        }
+
+        throw NO_PERMISSION.create();
+    }
+
+    private static void requireCanViewOrgCasinoStats(ServerCommandSource source, OrganizationState.Organization organization) throws CommandSyntaxException {
+        if (config.publicServerStats() || source.hasPermissionLevel(2) || isOrgMember(source, organization)) {
+            return;
+        }
+
+        throw NO_PERMISSION.create();
+    }
+
+    private static boolean isOrgMember(ServerCommandSource source, OrganizationState.Organization organization) {
+        ServerPlayerEntity player = source.getPlayer();
+        return player != null && organization.members().containsKey(player.getUuid());
+    }
+
+    private static void sendOrgCasinoInfo(ServerCommandSource source, OrganizationState.Organization organization) {
+        KazikState state = KazikState.get(source.getServer());
+        state.rememberCasinoName(organization.id(), organization.name());
+        boolean open = state.isOrgCasinoEnabled(organization.id());
+
+        send(source, "Organization casino: " + organization.name());
+        send(source, "Status: " + (open ? "open" : "closed"));
+        send(source, "Bankroll: " + format(PowerRuble.api().getBalance(source.getServer(), organization.id())));
+        if (config.statsEnabled()) {
+            KazikState.GlobalStats stats = state.casinoStats(organization.id()).stats();
+            send(source, "Games: " + stats.gamesPlayed() + ", house profit: " + format(stats.houseProfit()));
+        }
+    }
+
+    private static void sendCasinoStats(ServerCommandSource source, String casinoName, KazikState.GlobalStats stats) {
+        send(source, "Kazik casino stats for " + casinoName + ":");
+        send(source, "Games: " + stats.gamesPlayed());
+        send(source, "Players won: " + format(stats.totalWon()));
+        send(source, "Players lost: " + format(stats.totalLost()));
+        send(source, "Total bets: " + format(stats.totalBet()));
+        send(source, "House profit: " + format(stats.houseProfit()));
+        send(source, "Wins/Losses/Draws: " + stats.wins() + "/" + stats.losses() + "/" + stats.draws());
+        send(source, "Biggest win/loss: " + format(stats.biggestWin()) + " / " + format(stats.biggestLoss()));
     }
 
     private static void validateBet(long bet) throws CommandSyntaxException {
@@ -291,25 +627,25 @@ public final class PowerRubleKazikMod implements ModInitializer {
         }
     }
 
-    private static void applyResult(MinecraftServer server, ServerPlayerEntity player, KazikGameEngine.GameResult result) throws CommandSyntaxException {
+    private static void applyResult(MinecraftServer server, ServerPlayerEntity player, CasinoAccount casino, KazikGameEngine.GameResult result) throws CommandSyntaxException {
         if (result.outcome() == KazikGameEngine.Outcome.WIN) {
-            RubleState.TransferResult transferResult = PowerRuble.api().transfer(server, HOUSE_ID, player.getUuid(), null, result.payout(), 0L, houseDebtLimit());
+            RubleState.TransferResult transferResult = PowerRuble.api().transfer(server, casino.id(), player.getUuid(), null, result.payout(), 0L, casinoDebtLimit(casino));
             if (transferResult != RubleState.TransferResult.OK) {
                 throw HOUSE_NOT_ENOUGH_MONEY.create();
             }
-            addTransferTransaction(server, HOUSE_ID, config.houseAccountName(), player.getUuid(), playerName(player), result.payout(), reason(result));
+            addTransferTransaction(server, casino.id(), casino.name(), player.getUuid(), playerName(player), result.payout(), reason(casino, result));
             return;
         }
 
         if (result.outcome() == KazikGameEngine.Outcome.LOSS) {
-            RubleState.TransferResult transferResult = PowerRuble.api().transfer(server, player.getUuid(), HOUSE_ID, null, result.lost(), 0L, betDebtLimit());
+            RubleState.TransferResult transferResult = PowerRuble.api().transfer(server, player.getUuid(), casino.id(), null, result.lost(), 0L, betDebtLimit());
             if (transferResult == RubleState.TransferResult.NOT_ENOUGH_MONEY) {
                 throw NOT_ENOUGH_MONEY.create();
             }
             if (transferResult != RubleState.TransferResult.OK) {
                 throw new SimpleCommandExceptionType(Text.literal("Could not transfer casino bet.")).create();
             }
-            addTransferTransaction(server, player.getUuid(), playerName(player), HOUSE_ID, config.houseAccountName(), result.lost(), reason(result));
+            addTransferTransaction(server, player.getUuid(), playerName(player), casino.id(), casino.name(), result.lost(), reason(casino, result));
         }
     }
 
@@ -317,8 +653,8 @@ public final class PowerRubleKazikMod implements ModInitializer {
         return config.allowDebt() ? PowerRuble.api().config().transferDebtLimit() : 0L;
     }
 
-    private static long houseDebtLimit() {
-        return config.finiteBankroll() ? 0L : Long.MIN_VALUE;
+    private static long casinoDebtLimit(CasinoAccount casino) {
+        return casino.finiteBankroll() ? 0L : Long.MIN_VALUE;
     }
 
     private static void addTransferTransaction(MinecraftServer server, UUID fromId, String fromName, UUID toId, String toName, long amount, String reason) {
@@ -328,8 +664,9 @@ public final class PowerRubleKazikMod implements ModInitializer {
         );
     }
 
-    private static String reason(KazikGameEngine.GameResult result) {
-        return "kazik " + result.game() + " " + result.outcome().name().toLowerCase(Locale.ROOT) + ": " + result.detail();
+    private static String reason(CasinoAccount casino, KazikGameEngine.GameResult result) {
+        String prefix = casino.house() ? "kazik" : "kazik org " + casino.name();
+        return prefix + " " + result.game() + " " + result.outcome().name().toLowerCase(Locale.ROOT) + ": " + result.detail();
     }
 
     private static int showOwnStats(ServerCommandSource source) throws CommandSyntaxException {
@@ -542,7 +879,19 @@ public final class PowerRubleKazikMod implements ModInitializer {
     }
 
     private static void rememberHouse(MinecraftServer server) {
-        PowerRuble.api().rememberAccountName(server, HOUSE_ID, config.houseAccountName());
+        rememberCasino(server, houseAccount());
+    }
+
+    private static void rememberCasino(MinecraftServer server, CasinoAccount casino) {
+        PowerRuble.api().rememberAccountName(server, casino.id(), casino.name());
+    }
+
+    private static CasinoAccount houseAccount() {
+        return new CasinoAccount(HOUSE_ID, config.houseAccountName(), config.finiteBankroll(), true);
+    }
+
+    private static CasinoAccount orgAccount(OrganizationState.Organization organization) {
+        return new CasinoAccount(organization.id(), organization.name(), true, false);
     }
 
     private static void send(ServerCommandSource source, String message) {
@@ -587,6 +936,9 @@ public final class PowerRubleKazikMod implements ModInitializer {
         WINS,
         LOSSES,
         PROFIT
+    }
+
+    private record CasinoAccount(UUID id, String name, boolean finiteBankroll, boolean house) {
     }
 
     @FunctionalInterface

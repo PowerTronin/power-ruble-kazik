@@ -32,11 +32,22 @@ file("gradle.properties").withInputStream { input ->
 def baseModVersion = buildProperties.getProperty("base_mod_version")
 def baseDevJar = file("libs/power-ruble-${baseModVersion}-dev.jar")
 def baseDevJarUrl = "https://github.com/PowerTronin/power-ruble/releases/download/v${baseModVersion}/power-ruble-${baseModVersion}-dev.jar"
+def orgContractsJar = file("libs/power-ruble-orgcontracts-${baseModVersion}.jar")
+def orgContractsJarUrl = "https://github.com/PowerTronin/power-ruble-orgcontracts/releases/download/v${baseModVersion}/power-ruble-orgcontracts-${baseModVersion}.jar"
 
 if (!baseDevJar.exists()) {
     baseDevJar.parentFile.mkdirs()
     new URL(baseDevJarUrl).withInputStream { input ->
         baseDevJar.withOutputStream { output ->
+            output << input
+        }
+    }
+}
+
+if (!orgContractsJar.exists()) {
+    orgContractsJar.parentFile.mkdirs()
+    new URL(orgContractsJarUrl).withInputStream { input ->
+        orgContractsJar.withOutputStream { output ->
             output << input
         }
     }

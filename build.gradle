@@ -27,6 +27,7 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     include implementation("blue.endless:jankson:1.2.3")
     modImplementation files("libs/power-ruble-${project.base_mod_version}-dev.jar")
+    modImplementation files("libs/power-ruble-orgcontracts-${project.base_mod_version}.jar")
 
     testImplementation "org.junit.jupiter:junit-jupiter:5.10.3"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"
