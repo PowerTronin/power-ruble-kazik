@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "power-ruble-kazik",
+  "version": "${version}",
+  "name": "Power Ruble Kazik",
+  "description": "Casino addon for Power Ruble balances.",
+  "authors": [
+    "power-ruble"
+  ],
+  "contact": {},
+  "license": "GPL-3.0-only",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "ru.powerruble.kazik.PowerRubleKazikMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.11",
+    "minecraft": "1.20.1",
+    "fabric-api": "*",
+    "java": ">=17",
+    "power-ruble": "*"
+  }
+}

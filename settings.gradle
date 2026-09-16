@@ -1,0 +1,45 @@
+pluginManagement {
+    repositories {
+        maven {
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+        }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
+    repositories {
+        maven {
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+        }
+        maven {
+            name = 'Mojang Libraries'
+            url = 'https://libraries.minecraft.net/'
+        }
+        mavenCentral()
+    }
+}
+
+def buildProperties = new Properties()
+file("gradle.properties").withInputStream { input ->
+    buildProperties.load(input)
+}
+
+def baseModVersion = buildProperties.getProperty("base_mod_version")
+def baseDevJar = file("libs/power-ruble-${baseModVersion}-dev.jar")
+def baseDevJarUrl = "https://github.com/PowerTronin/power-ruble/releases/download/v${baseModVersion}/power-ruble-${baseModVersion}-dev.jar"
+
+if (!baseDevJar.exists()) {
+    baseDevJar.parentFile.mkdirs()
+    new URL(baseDevJarUrl).withInputStream { input ->
+        baseDevJar.withOutputStream { output ->
+            output << input
+        }
+    }
+}
+
+rootProject.name = 'power-ruble-kazik'
