@@ -100,7 +100,7 @@ This repository downloads the matching base development jar from the `power-rubl
 
 ## License
 
-Power Ruble Kazik is licensed under GPL-3.0-only. See `LICENSE`.
+Power Ruble Kazik is licensed under Apache-2.0. See `LICENSE` and `NOTICE`.
 
 ## Build
 

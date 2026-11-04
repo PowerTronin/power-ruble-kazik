@@ -41,6 +41,11 @@ processResources {
     }
 }
 
+jar {
+    from("LICENSE") { into "META-INF" }
+    from("NOTICE") { into "META-INF" }
+}
+
 tasks.withType(JavaCompile).configureEach {
     it.options.release = 17
 }
